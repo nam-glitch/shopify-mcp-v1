@@ -862,6 +862,51 @@ async def shopify_create_fulfillment(params: CreateFulfillmentInput) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# TRANSACTIONS
+# ═══════════════════════════════════════════════════════════════════════════
+
+class GetOrderTransactionsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    order_id: int = Field(..., description="The Shopify order ID to fetch transactions for")
+
+
+@mcp.tool(
+    name="shopify_get_order_transactions",
+    annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True},
+)
+async def shopify_get_order_transactions(params: GetOrderTransactionsInput) -> str:
+    """
+    Get all payment transactions for a specific order.
+    Returns transaction kind, status, amount, currency, gateway,
+    and processing fees (if exposed by the payment gateway).
+    Requires read_orders scope with transaction access.
+    """
+    try:
+        data         = await _request("GET", f"orders/{params.order_id}/transactions.json")
+        transactions = data.get("transactions", [])
+
+        # Extract key financial fields for each transaction
+        result = []
+        for txn in transactions:
+            result.append({
+                "id":           txn.get("id"),
+                "order_id":     txn.get("order_id"),
+                "kind":         txn.get("kind"),          # sale, refund, capture, void, authorization
+                "status":       txn.get("status"),        # success, failure, pending, error
+                "amount":       txn.get("amount"),
+                "currency":     txn.get("currency"),
+                "gateway":      txn.get("gateway"),       # shopify_payments, paypal, etc.
+                "fees":         txn.get("fees", []),       # payment processing fees
+                "processed_at": txn.get("processed_at"),
+                "receipt":      txn.get("receipt", {}),   # gateway receipt — contains raw fee details
+            })
+
+        return _fmt({"order_id": params.order_id, "count": len(result), "transactions": result})
+    except Exception as e:
+        return _error(e)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # SHOP INFO
 # ═══════════════════════════════════════════════════════════════════════════
 
